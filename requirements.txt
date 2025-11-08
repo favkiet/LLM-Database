@@ -1,0 +1,33 @@
+# Core
+python-dotenv
+pyyaml
+numpy
+pandas
+
+# Graph and Tracing - Latest compatible versions for Python 3.10
+langgraph
+langchain-core
+langchain-openai
+langchain-ollama
+langsmith
+
+# LLM and Embeddings
+ollama
+sentence-transformers
+
+# Database
+sqlalchemy
+# Note: sqlite3 is built-in with Python
+
+# NLP and Text Processing
+tqdm
+loguru
+click
+
+# Development
+jupyter
+ipykernel
+pytest
+
+# OpenAI (Phase 2)
+openai
