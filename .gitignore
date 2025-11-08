@@ -93,7 +93,6 @@ configs/
 .langgraph_api/
 
 # draf
-*.md
 setup.py
 Makefile
 Dockerfile
