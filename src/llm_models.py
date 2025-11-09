@@ -52,7 +52,7 @@ class OllamaLLM(BaseLLM):
         self,
         model_name: str,
         base_url: str = "http://localhost:11434",
-        temperature: float = 0.7,
+        temperature: float = 0.1,
     ):
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
