@@ -14,6 +14,7 @@ langsmith
 # LLM and Embeddings
 ollama
 sentence-transformers
+faiss-cpu
 
 # Database
 sqlalchemy

@@ -1,7 +1,12 @@
-from typing import TypedDict, Annotated
-from langchain_core.messages import BaseMessage
+from typing import Annotated
+from pydantic import BaseModel
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph.message import add_messages
 
-class ChatState(TypedDict):
+class ChatState(BaseModel):
     """State definition for the chatbot graph"""
-    messages: Annotated[list[BaseMessage], add_messages]
+    human_messages: str
+    ai_messages: str
+    query_sql: str
+    result_query: str
+    conversation: Annotated[list[BaseMessage], add_messages]
