@@ -15,6 +15,12 @@ from IPython.display import display
 from src.state import ChatState
 from src.logger_utils import logger
 from src.utils import retrieve_relevant_tables_faiss
+from src.prompt import (
+    SYSTEM_PROMPT_LLM_RESPONSE,
+    USER_PROMPT_LLM_RESPONSE_TEMPLATE,
+    SYSTEM_PROMPT_TEXT2SQL,
+    USER_PROMPT_TEXT2SQL_TEMPLATE,
+)
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 
@@ -24,18 +30,11 @@ def llm_response(state: ChatState):
     human_input = state.human_messages
     db_result = state.result_query
     
-    system_prompt = (
-        "You are an AI assistant that answers user questions based on the given SQL query result.\n"
-        "If the result is available, summarize answer in natural language.\n"
-        "Always respond clearly and concisely.\n\n"
+    system_prompt = SYSTEM_PROMPT_LLM_RESPONSE
+    user_prompt = USER_PROMPT_LLM_RESPONSE_TEMPLATE.format(
+        db_result=db_result,
+        human_input=human_input,
     )
-    user_prompt = f"""
-    ### Input:
-    Query result: {db_result}
-    User question: {human_input}
-
-    ### Response:
-    """
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -79,7 +78,7 @@ def db_query_node(state: ChatState):
                 result_query = ""
             state.conversation.append(AIMessage(content=result_query))
             logger.info("==================== Query Result ====================")
-            logger.info(result_query)
+            print(result_query)
             state.result_query = result_query
     except Exception as e:
         state.conversation.append(AIMessage(content=f"DB error: {e}"))
@@ -103,29 +102,11 @@ def text2sql_node(state: ChatState):
     relevant_table_sql = retrieve_relevant_tables_faiss(user_question, 3)
     
     # --- Construct LLM prompt ---
-    system_prompt = """### Instructions:
-    Your task is to convert a question into a SQL query, given a SQLite database schema.
-    Rules:
-        1. All SQL must be compatible with SQLite.
-        2. Always return valid SQL syntax for SQLite.
-        3. Condition must follow the question, do not add any additional conditions (even that check NULL values).
-        4. For TEXT columns, use one of the following methods:
-            - Wrap both sides of the comparison with LOWER() or UPPER(), e.g.:
-                WHERE LOWER(customer_name) = LOWER('John Doe')
-            - Or, if appropriate, use COLLATE NOCASE, e.g.:
-                WHERE customer_name = 'John Doe' COLLATE NOCASE
-        5. Do not include any non-SQL syntax like ESCAPE clauses unless strictly needed by SQLite.
-    """
-    
-    user_prompt = f"""
-    ### Input:
-    Question: {user_question}
-    Schema:
-    {relevant_table_sql}
-
-    ### Response:
-    ```sql
-    """
+    system_prompt = SYSTEM_PROMPT_TEXT2SQL
+    user_prompt = USER_PROMPT_TEXT2SQL_TEMPLATE.format(
+        user_question=user_question,
+        relevant_table_sql=relevant_table_sql,
+    )
 
     messages = [
         SystemMessage(content=system_prompt),

@@ -162,7 +162,7 @@ def retrieve_relevant_tables_faiss(query: str, k: int = 1):
     for rank, (idx, score) in enumerate(zip(indices, scores), start=1):
         desc = metadata[idx]
         match = re.search(r"CREATE\s+TABLE\s+(\w+)", desc, re.IGNORECASE)
-        table_name = match.group(1) if match else None
+        table_name = match[1] if match else None
         print(f"{rank}. (similarity={score:.6f})\n   Table: {table_name}\n")
         relevant_tables_sql.append(desc) 
 
