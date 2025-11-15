@@ -3,9 +3,11 @@ import csv
 import json
 import os
 import re
+import sqlite3
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 from pathlib import Path
+import pandas as pd
 
 from src.state import ChatState
 from src.nodes import text2sql_node
@@ -343,10 +345,33 @@ def main() -> None:
     # Fixed path: data/test_text2sql.txt relative to project root (this file's directory)
     project_root = Path(__file__).resolve().parent
     testfile_path = project_root / "data" / "test_text2sql.txt"
+    db_path = project_root / "data" / "retails" / "retails.sqlite"
+    out_path = project_root / "data" / "evaluation" / "result_text2sql_rag.json"
     pairs = evaluator._read_test_text2sql_pairs(str(testfile_path))
 
     predictions: List[str] = []
     references: List[str] = []
+    pred_results: List[str] = []
+    ref_results: List[str] = []
+
+    def execute_sql(sql: str) -> str:
+        sql_clean = (sql or "").strip()
+        if not sql_clean:
+            return ""
+        try:
+            with sqlite3.connect(db_path, timeout=10) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(sql_clean)
+                rows = cursor.fetchall()
+                if not rows:
+                    return ""
+                df = pd.DataFrame([dict(row) for row in rows])
+                return "\n".join(
+                    [", ".join(f"{col}={row[col]}" for col in df.columns) for _, row in df.iterrows()]
+                )
+        except Exception as e:
+            return f"DB error: {e}"
 
     for question, ref_sql in pairs:
         # Build initial state and invoke text2sql_node to get predicted SQL
@@ -361,9 +386,49 @@ def main() -> None:
         pred_sql = state.query_sql or ""
         predictions.append(pred_sql)
         references.append(ref_sql)
+        pred_results.append(execute_sql(pred_sql))
+        ref_results.append(execute_sql(ref_sql))
 
-    summary = evaluator.evaluate(predictions, references, return_per_sample=True)
+    # Compute metrics and assemble detailed per-sample report
+    results = [evaluator.evaluate_pair(p, r) for p, r in zip(predictions, references)]
+    em_scores = [1.0 if r.exact_match else 0.0 for r in results]
+    valid_flags = [1.0 if r.valid else 0.0 for r in results]
+    ves_scores = [r.ves for r in results]
+
+    def avg(values: List[float]) -> float:
+        return float(sum(values) / len(values)) if values else 0.0
+
+    per_sample = []
+    for idx, ((question, ref_sql), pred_sql, res, pr, rr) in enumerate(
+        zip(pairs, predictions, results, pred_results, ref_results), start=1
+    ):
+        per_sample.append(
+            {
+                "id": idx,
+                "question": question,
+                "pred_sql": pred_sql,
+                "ref_sql": ref_sql,
+                "pred_result": pr,
+                "ref_result": rr,
+                "exact_match": res.exact_match,
+                "valid": res.valid,
+                "ves": res.ves,
+                "details": res.details,
+            }
+        )
+
+    summary: Dict[str, object] = {
+        "num_samples": len(results),
+        "EM": avg(em_scores),
+        "Valid_Ratio": avg(valid_flags),
+        "VES": avg(ves_scores),
+        "per_sample": per_sample,
+    }
+
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    os.makedirs(out_path.parent, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":

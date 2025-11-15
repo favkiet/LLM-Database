@@ -9,4 +9,6 @@ class ChatState(BaseModel):
     ai_messages: str
     query_sql: str
     result_query: str
+    row_count: int = 0  # Số lượng rows trong kết quả truy vấn
+    csv_file_path: str = ""  # Đường dẫn file CSV nếu kết quả > 20 rows
     conversation: Annotated[list[BaseMessage], add_messages]
