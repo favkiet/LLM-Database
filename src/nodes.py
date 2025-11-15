@@ -54,6 +54,7 @@ def db_query_node(state: ChatState):
     """
     Simple node: expects `query_sql` in state.
     Executes the query against data/retails/retails.sqlite and returns results as an AIMessage.
+    If rows > 20: exports full result to CSV and shows only first 20 rows.
     """
     query_sql = state.query_sql or ""
     if not isinstance(query_sql, str) or not query_sql.strip():
@@ -70,19 +71,57 @@ def db_query_node(state: ChatState):
             cursor.execute(query_sql)
             if rows := cursor.fetchall():
                 df = pd.DataFrame([dict(row) for row in rows])
-                result_query = "\n".join([
-                    ", ".join(f"{col}={row[col]}" for col in df.columns)
-                    for _, row in df.iterrows()
-                ])
+                state.row_count = len(rows)
+                
+                # Nếu > 20 rows: xuất CSV và chỉ hiển thị 20 rows đầu
+                if state.row_count > 20:
+                    # Tạo thư mục output nếu chưa có
+                    output_dir = project_root / "data" / "output"
+                    output_dir.mkdir(exist_ok=True)
+                    
+                    # Tạo tên file với timestamp
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    csv_filename = f"query_result_{timestamp}.csv"
+                    csv_path = output_dir / csv_filename
+                    
+                    # Xuất toàn bộ kết quả ra CSV
+                    df.to_csv(csv_path, index=False)
+                    state.csv_file_path = str(csv_path)
+                    
+                    logger.info(f"Exported {state.row_count} rows to CSV: {csv_path}")
+                    
+                    # Chỉ hiển thị 20 rows đầu tiên
+                    df_display = df.head(20)
+                    result_query = "\n".join([
+                        ", ".join(f"{col}={row[col]}" for col in df_display.columns)
+                        for _, row in df_display.iterrows()
+                    ])
+                    result_query += f"\n\n[Showing first 20 of {state.row_count} rows. Full results saved to: {csv_filename}]"
+                else:
+                    # Hiển thị tất cả nếu <= 20 rows
+                    result_query = "\n".join([
+                        ", ".join(f"{col}={row[col]}" for col in df.columns)
+                        for _, row in df.iterrows()
+                    ])
+                    state.csv_file_path = ""
             else:
                 result_query = ""
+                state.row_count = 0
+                state.csv_file_path = ""
+                
             state.conversation.append(AIMessage(content=result_query))
             logger.info("==================== Query Result ====================")
+            logger.info(f"Number of rows: {state.row_count}")
+            if state.csv_file_path:
+                logger.info(f"CSV exported to: {state.csv_file_path}")
             print(result_query)
             state.result_query = result_query
     except Exception as e:
         state.conversation.append(AIMessage(content=f"DB error: {e}"))
         state.result_query = ""
+        state.row_count = 0
+        state.csv_file_path = ""
 
     return state
     
@@ -122,3 +161,23 @@ def text2sql_node(state: ChatState):
 
     state.conversation.append(response)
     return state
+
+
+def route_based_on_rows(state: ChatState) -> str:
+    """
+    Hàm điều hướng dựa trên số lượng rows trong kết quả truy vấn.
+    - Nếu row_count < 20: điều hướng đến node 'llm' (hiển thị bảng + câu trả lời AI)
+    - Nếu row_count >= 20: điều hướng đến 'END' (chỉ hiển thị 20 rows đầu + xuất CSV)
+    """
+    row_count = state.row_count
+    logger.info("==================== Routing Decision ====================")
+    logger.info(f"Row count: {row_count}")
+    
+    if row_count < 20:
+        logger.info("Routing to 'llm' node (few rows - show table + AI response)")
+        return "llm"
+    else:
+        logger.info("Routing to 'END' (many rows - showing first 20 rows)")
+        if state.csv_file_path:
+            logger.info(f"Full results exported to CSV: {state.csv_file_path}")
+        return "END"

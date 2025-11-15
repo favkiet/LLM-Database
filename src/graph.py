@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage
 from src.state import ChatState
-from src.nodes import llm_response, db_query_node, text2sql_node
+from src.nodes import llm_response, db_query_node, text2sql_node, route_based_on_rows
 from langsmith import traceable
 from src.logger_utils import logger
 from dotenv import load_dotenv
@@ -17,7 +17,18 @@ graph.add_node("text2sql_node", text2sql_node)
 # define edges
 graph.add_edge(START, "text2sql_node")
 graph.add_edge("text2sql_node", "db_query_node")
-graph.add_edge("db_query_node", "llm")
+
+# Conditional edge: điều hướng dựa trên số lượng rows
+# - Nếu < 10 rows: đi đến node 'llm' (hiển thị bảng + câu trả lời AI)
+# - Nếu >= 10 rows: đi thẳng đến 'END' (chỉ hiển thị kết quả với scroll)
+graph.add_conditional_edges(
+    "db_query_node",
+    route_based_on_rows,
+    {
+        "llm": "llm",
+        "END": END
+    }
+)
 graph.add_edge("llm", END)
 
 graph = graph.compile()
@@ -36,6 +47,8 @@ def invoke_llm_database(user_query: str):
         "ai_messages": "",
         "query_sql": "",
         "result_query": "",
+        "row_count": 0,
+        "csv_file_path": "",
     }
 
     response = graph.invoke(initial_state)
