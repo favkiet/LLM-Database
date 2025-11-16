@@ -35,14 +35,23 @@ graph = graph.compile()
 
 @traceable(name="invoke-llm-database",
         tags=["llm-database"])
-def invoke_llm_database(user_query: str):
+def invoke_llm_database(user_query: str, provider: str):
+    """
+    Invoke LLM database assistant.
+    
+    Args:
+        user_query: The user's natural language question
+        provider: LLM provider to use ("ollama" or "openai"). Defaults to "ollama"
+    """
     user_message = HumanMessage(content=user_query)
     logger.info("========= Human Message =========")
     logger.info(user_query)
+    logger.info(f"========= Using Provider: {provider} =========")
     
     # Build initial state following ChatState schema
     initial_state: ChatState = {
         "conversation": [user_message],
+        "provider": provider,
         "human_messages": user_query,
         "ai_messages": "",
         "query_sql": "",

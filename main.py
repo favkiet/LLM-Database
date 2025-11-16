@@ -9,4 +9,10 @@ if __name__ == "__main__":
     user_query = "Please list the phone numbers of all the customers in the household segment and are in Brazil."
     # user_query = "How many total customers are there?"
     # user_query = "List all customers with invoices over 500,000"
-    response = invoke_llm_database(user_query)
+    
+    # Chọn provider: "ollama" hoặc "openai"
+    # Mặc định là "ollama" nếu không truyền tham số provider
+    provider = "ollama"  # Thay đổi thành "openai" để sử dụng OpenAI
+    
+    # Gọi với provider
+    response = invoke_llm_database(user_query, provider=provider)

@@ -5,6 +5,7 @@ from langgraph.graph.message import add_messages
 
 class ChatState(BaseModel):
     """State definition for the chatbot graph"""
+    provider: str
     human_messages: str
     ai_messages: str
     query_sql: str
