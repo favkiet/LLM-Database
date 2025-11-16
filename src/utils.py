@@ -31,6 +31,7 @@ def create_table_sql(table_entry: dict, csv_dir: str) -> list[str]:
     csv_desc = {}
     for csv_file in csv_dir.glob("*.csv"):
         df = pd.read_csv(csv_file).fillna("")
+        df.columns = [c.strip().lower() for c in df.columns]
         desc_dict = {}
         for _, row in df.iterrows():
             col_name = row["original_column_name"]
