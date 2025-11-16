@@ -8,7 +8,7 @@ from src.logger_utils import logger
 
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
-def create_table_sql(table_entry: dict, csv_dir: str):
+def create_table_sql(table_entry: dict, csv_dir: str) -> list[str]:
     """
     Generate full SQL schema for each table, using train_table JSON + CSV description.
 
@@ -74,8 +74,7 @@ def create_table_sql(table_entry: dict, csv_dir: str):
 
         # Primary key(s)
         pk_idx = primary_keys[t_idx] if isinstance(primary_keys[t_idx], list) else [primary_keys[t_idx]]
-        pk_cols = [column_names[i][1] for i in pk_idx if column_names[i][0] == t_idx]
-        if pk_cols:
+        if pk_cols := [column_names[i][1] for i in pk_idx if column_names[i][0] == t_idx]:
             sql += f"  PRIMARY KEY ({', '.join(pk_cols)}),\n"
 
         # Foreign keys
@@ -89,9 +88,8 @@ def create_table_sql(table_entry: dict, csv_dir: str):
         sql = sql.rstrip(",\n") + "\n);\n"
 
         # Add possible joins
-        joins = table_join_context.get(table_name)
-        if joins:
-            sql += f"--- Possible joins for this table: "
+        if joins := table_join_context.get(table_name):
+            sql += "--- Possible joins for this table: "
             for jc in joins:
                 sql += f"{jc}\n"
 
@@ -106,8 +104,8 @@ def index_tables_schema_faiss(sql_all_tables: list):
     project_root = Path(__file__).resolve().parents[1]
     data_dir = project_root / "data" / "retails"
     schema_dir = data_dir / "database_description"
-    faiss_index_path = data_dir / "table_schema.index"
-    metadata_path = data_dir / "table_metadata.json"
+    faiss_index_path = data_dir / "table_schema_1.index"
+    metadata_path = data_dir / "table_metadata_1.json"
 
     # 1️⃣ Load model
     model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -168,10 +166,3 @@ def retrieve_relevant_tables_faiss(query: str, k: int = 1):
 
     return "\n".join(relevant_tables_sql)
 
-if __name__ == "__main__":
-
-    with open(Path(__file__).resolve().parents[1] / "data" / "train_tables_retails.json", "r") as f:
-        table_entry = json.load(f)[0]
-    csv_dir = Path(__file__).resolve().parents[1] / "data" / "retails" / "database_description"
-    sql_all_tables = create_table_sql(table_entry, csv_dir=csv_dir)
-    index_tables_schema_faiss(sql_all_tables)
