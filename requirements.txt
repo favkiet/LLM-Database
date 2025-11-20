@@ -3,6 +3,7 @@ python-dotenv
 pyyaml
 numpy
 pandas
+openpyxl
 
 # Graph and Tracing - Latest compatible versions for Python 3.10
 langgraph
@@ -32,3 +33,6 @@ pytest
 
 # OpenAI (Phase 2)
 openai
+
+# Web UI
+streamlit

@@ -7,10 +7,11 @@ from langsmith import traceable
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from openai import OpenAI
 
 from src.state import ChatState
 from src.logger_utils import logger
-from src.utils import retrieve_relevant_tables_faiss
+from src.utils import retrieve_relevant_tables_faiss, get_all_tables_schema
 from src.prompt import (
     SYSTEM_PROMPT_LLM_RESPONSE,
     USER_PROMPT_LLM_RESPONSE_TEMPLATE,
@@ -27,8 +28,8 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 OLLAMA_MODEL_TEXT2SQL = os.getenv("OLLAMA_MODEL_TEXT2SQL")
 
 # OpenAI settings
-OPENAI_MODEL_TEXT2SQL = os.getenv("OPENAI_MODEL_TEXT2SQL", "gpt-3.5-turbo")
-OPENAI_MODEL_RESPONSE = os.getenv("OPENAI_MODEL_RESPONSE", "gpt-3.5-turbo")
+OPENAI_MODEL_TEXT2SQL = os.getenv("OPENAI_MODEL_TEXT2SQL", "gpt-4o-mini")
+OPENAI_MODEL_RESPONSE = os.getenv("OPENAI_MODEL_RESPONSE", "gpt-4o-mini")
 
 
 def get_llm_for_provider(provider: str, task: str = "text2sql"):
@@ -40,11 +41,14 @@ def get_llm_for_provider(provider: str, task: str = "text2sql"):
         task: "text2sql" or "response" to select the appropriate model
     
     Returns:
-        LLM instance (ChatOllama or ChatOpenAI)
+        LLM instance (OpenAI client or ChatOllama)
     """
     if provider.lower() == "openai":
-        model = OPENAI_MODEL_TEXT2SQL if task == "text2sql" else OPENAI_MODEL_RESPONSE
-        return ChatOpenAI(model=model, temperature=0.1)
+        # Return OpenAI client directly (not through LangChain)
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or api_key.startswith("${"):
+            raise ValueError("Missing OPENAI_API_KEY. Please set it in environment.")
+        return OpenAI(api_key=api_key)
     else:  # default to ollama
         model = OLLAMA_MODEL_TEXT2SQL if task == "text2sql" else OLLAMA_MODEL_RESPONSE
         return ChatOllama(model=model, base_url=OLLAMA_BASE_URL)
@@ -52,10 +56,9 @@ def get_llm_for_provider(provider: str, task: str = "text2sql"):
 
 @traceable(name="llm_response")
 def llm_response(state: ChatState):
-    """Node that sends conversation to LLM (Ollama or OpenAI) and appends AI response."""
+    """Node that sends conversation to LLM (Ollama only) and appends AI response."""
     human_input = state.human_messages
     db_result = state.result_query
-    provider = state.provider
     
     system_prompt = SYSTEM_PROMPT_LLM_RESPONSE
     user_prompt = USER_PROMPT_LLM_RESPONSE_TEMPLATE.format(
@@ -63,16 +66,17 @@ def llm_response(state: ChatState):
         human_input=human_input,
     )
 
+    # Always use Ollama for response generation
+    llm = ChatOllama(model=OLLAMA_MODEL_RESPONSE, base_url=OLLAMA_BASE_URL)
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ]
-
-    llm = get_llm_for_provider(provider, task="response")
+    
     response = llm.invoke(messages)
-    # Append the model response to the conversation list
     state.conversation.append(response)
     state.ai_messages = getattr(response, "content", "")
+    
     return state
 
 
@@ -159,16 +163,21 @@ def text2sql_node(state: ChatState):
     Node that converts a natural language question into an SQL query.
     Context includes: user question + schema descriptions (from CSV files).
     Uses provider from state to select LLM (Ollama or OpenAI).
+    
+    Args:
+        state: ChatState object
+        use_retrieval: If True, use FAISS to retrieve relevant tables.
+                       If False, use all tables schema (for evaluation without evidence).
     """
     user_question = state.human_messages
+    
     provider = state.provider
     
     if not user_question:
         raise ValueError("No user question provided.")
 
     # --- Load table schema descriptions ---
-    project_root = Path(__file__).resolve().parents[1]
-    relevant_table_sql = retrieve_relevant_tables_faiss(user_question, 3)
+    relevant_table_sql = get_all_tables_schema()
     
     # --- Construct LLM prompt ---
     system_prompt = SYSTEM_PROMPT_TEXT2SQL
@@ -177,20 +186,38 @@ def text2sql_node(state: ChatState):
         relevant_table_sql=relevant_table_sql,
     )
 
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt)
-    ]
-    
     llm = get_llm_for_provider(provider, task="text2sql")
-    response = llm.invoke(messages)
-    # Set the generated SQL into the state for the next node
-    content = getattr(response, "content", "").strip()
+    
+    if provider.lower() == "openai":
+        # Use OpenAI client directly
+        model = OPENAI_MODEL_TEXT2SQL
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        response = llm.chat.completions.create(
+            model=model,
+            messages=messages,
+        )
+        content = response.choices[0].message.content.strip()
+        # Create AIMessage for consistency with state.conversation
+        ai_message = AIMessage(content=content)
+        state.conversation.append(ai_message)
+    else:
+        # Use LangChain for Ollama
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        response = llm.invoke(messages)
+        content = getattr(response, "content", "").strip()
+        state.conversation.append(response)
+    
+    # Clean SQL from markdown code blocks
     query_cleaned = re.sub(r"^```(?:sql)?\s*|\s*```$", "", content.strip(), flags=re.IGNORECASE | re.MULTILINE)
     state.query_sql = query_cleaned.strip()
     logger.info("==================== Query SQL ====================\n" + state.query_sql)
-
-    state.conversation.append(response)
+    
     return state
 
 
