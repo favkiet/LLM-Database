@@ -166,3 +166,21 @@ def retrieve_relevant_tables_faiss(query: str, k: int = 1):
 
     return "\n".join(relevant_tables_sql)
 
+
+def get_all_tables_schema():
+    """
+    Load all table schemas without retrieval (for evaluation without evidence).
+    """
+    project_root = Path(__file__).resolve().parents[1]
+    data_dir = project_root / "data" / "retails"
+    metadata_path = data_dir / "table_metadata.json"
+    
+    # Load all table schemas
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+    
+    logger.info("==================== All Tables Schema ====================")
+    logger.info(f"Loaded {len(metadata)} tables")
+    
+    return "\n\n".join(metadata)
+
